@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系統阻抗曲線計算</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/regression/2.0.1/regression.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Noto+Sans+TC:wght@400;700&display=swap');
+
+        :root {
+            --panel-bg: #0a0a0a;
+            --card-bg: #141414;
+            --border-color: #333333;
+            --accent-color: #fbbf24; /* 亮黃色 */
+            --text-main: #f8fafc;    /* 調亮主文字 */
+            --text-muted: #cbd5e1;  /* 調亮次要文字 */
+            --text-dim: #94a3b8;    /* 調亮標籤文字 */
+        }
+
+        body {
+            background-color: var(--panel-bg);
+            color: var(--text-main);
+            font-family: 'Noto Sans TC', sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .industrial-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            position: relative;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+        }
+
+        .industrial-card::before {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 2px;
+            background: linear-gradient(90deg, var(--accent-color), transparent);
+        }
+
+        input, select {
+            background: #000;
+            border: 1px solid #444;
+            color: var(--accent-color);
+            font-family: 'JetBrains Mono', monospace;
+            padding: 8px;
+            width: 100%;
+            border-radius: 0;
+            font-size: 1rem;
+        }
+
+        input:focus, select:focus {
+            border-color: var(--accent-color);
+            outline: none;
+            background: #050505;
+        }
+
+        .btn-action {
+            background: var(--accent-color);
+            color: #000;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .btn-action:hover {
+            filter: brightness(1.1);
+            transform: scale(1.01);
+            box-shadow: 0 0 15px rgba(251, 191, 36, 0.3);
+        }
+
+        .chart-container {
+            height: 550px;
+            background: #000;
+            padding: 20px;
+            border: 1px solid #262626;
+        }
+
+        .eqn-display {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            font-weight: 700;
+        }
+
+        table th {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            padding-bottom: 12px;
+        }
+
+        label {
+            color: var(--text-muted);
+            font-weight: 700;
+        }
+
+        .mode-tag {
+            font-size: 0.65rem;
+            padding: 2px 6px;
+            background: #333;
+            color: #fbbf24;
+            margin-left: 8px;
+            border: 1px solid #fbbf24;
+        }
+    </style>
+</head>
+<body oncontextmenu="return false;"> <!-- 透過 HTML 屬性直接阻擋右鍵 -->
+    <div class="max-w-7xl mx-auto">
+        <header class="mb-8 flex justify-between items-end border-b border-zinc-700 pb-6">
+            <div>
+                <h1 class="text-4xl font-black tracking-tighter text-white">FLOW <span class="text-amber-300">DYNAMICS V2.4</span></h1>
+                <p class="text-zinc-300 text-xs uppercase tracking-[0.3em] mt-2 font-bold">P-Q Curve & System Resistance Analyzer</p>
+            </div>
+            <div class="text-right">
+                <div class="text-xs font-mono text-zinc-400 font-bold">ENGINEERING UNIT: CFM, inH₂O</div>
+                <div class="text-xs font-mono text-amber-800 font-bold">CREATED BY RANDY CHEN</div>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-12 gap-8">
+            <div class="col-span-12 lg:col-span-4 space-y-6">
+                <!-- 01. 風扇 PQ 數據 -->
+                <div class="industrial-card p-6">
+                    <h2 class="text-xs font-black mb-6 text-zinc-200 uppercase tracking-widest flex items-center">
+                        <span class="w-2 h-4 bg-amber-500 mr-3"></span> 01. 單顆風扇 PQ Data
+                    </h2>
+                    <table class="w-full">
+                        <thead>
+                            <tr>
+                                <th>風量 (CFM)</th>
+                                <th>靜壓 (inH₂O)</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="pq-body">
+                            <tr>
+                                <td><input type="number" step="any" class="q-val" value="0"></td>
+                                <td><input type="number" step="any" class="p-val" value="2.5"></td>
+                                <td></td>
+                            </tr>
+                            <tr>
+                                <td><input type="number" step="any" class="q-val" value="80"></td>
+                                <td><input type="number" step="any" class="p-val" value="1.8"></td>
+                                <td></td>
+                            </tr>
+                            <tr>
+                                <td><input type="number" step="any" class="q-val" value="150"></td>
+                                <td><input type="number" step="any" class="p-val" value="0"></td>
+                                <td></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <button onclick="addRow()" class="mt-4 text-[11px] text-zinc-400 hover:text-amber-400 font-black uppercase transition-all">
+                        + 添加測量點 (Add Row)
+                    </button>
+                </div>
+
+                <!-- 02. 多風扇配置 -->
+                <div class="industrial-card p-6">
+                    <h2 class="text-xs font-black mb-6 text-zinc-200 uppercase tracking-widest flex items-center">
+                        <span class="w-2 h-4 bg-amber-500 mr-3"></span> 02. 多風扇配置 (Configuration)
+                    </h2>
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-[11px] block mb-2 uppercase">配置方式</label>
+                                <select id="fan-config">
+                                    <option value="single">單顆 (Single)</option>
+                                    <option value="series">串聯 (Series)</option>
+                                    <option value="parallel">並聯 (Parallel)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-[11px] block mb-2 uppercase">風扇數量</label>
+                                <input type="number" id="fan-count" value="1" min="1" max="10">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 03. 系統操作點 -->
+                <div class="industrial-card p-6">
+                    <h2 class="text-xs font-black mb-6 text-zinc-200 uppercase tracking-widest flex items-center">
+                        <span class="w-2 h-4 bg-amber-500 mr-3"></span> 03. 系統操作點 (Operating Point)
+                    </h2>
+                    <div class="space-y-6">
+                        <div>
+                            <label class="text-[11px] block mb-2 uppercase">系統操作風量需求</label>
+                            <div class="flex items-center">
+                                <input type="number" id="op-q" value="100">
+                                <span class="ml-3 text-xs font-mono text-zinc-300 font-bold">CFM</span>
+                            </div>
+                        </div>
+                        <button onclick="runAnalysis()" class="w-full py-4 btn-action shadow-lg">
+                            執行計算並更新圖表
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-span-12 lg:col-span-8 space-y-6">
+                <div class="industrial-card">
+                    <div class="chart-container">
+                        <canvas id="mainChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-6">
+                    <div class="industrial-card p-5 border-l-4 border-l-emerald-500">
+                        <div class="flex justify-between items-center mb-2">
+                            <div class="text-[11px] text-emerald-400 uppercase font-black">Composite Fan Curve</div>
+                            <span id="config-badge" class="mode-tag">SINGLE</span>
+                        </div>
+                        <div id="fan-eq" class="eqn-display text-emerald-300">--</div>
+                    </div>
+                    <div class="industrial-card p-5 border-l-4 border-l-blue-500">
+                        <div class="text-[11px] text-blue-400 uppercase mb-2 font-black">System Impedance (P=kQ²)</div>
+                        <div id="sys-eq" class="eqn-display text-blue-300">--</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 額外透過 JavaScript 確保阻擋右鍵選單
+        document.addEventListener('contextmenu', event => event.preventDefault());
+
+        let myChart = null;
+
+        function addRow() {
+            const tbody = document.getElementById('pq-body');
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td class="pt-2"><input type="number" step="any" class="q-val"></td>
+                <td class="pt-2"><input type="number" step="any" class="p-val"></td>
+                <td class="pt-2 px-2"><button onclick="this.parentElement.parentElement.remove()" class="text-zinc-500 hover:text-red-500 text-xl font-bold">×</button></td>
+            `;
+            tbody.appendChild(row);
+        }
+
+        function getCompositePoints(basePoints, config, count) {
+            if (config === 'series') {
+                return basePoints.map(p => ({ x: p.x, y: p.y * count }));
+            } else if (config === 'parallel') {
+                return basePoints.map(p => ({ x: p.x * count, y: p.y }));
+            }
+            return basePoints;
+        }
+
+        function getPressureAtFlow(points, targetQ) {
+            if (points.length < 2) return 0;
+            if (targetQ <= points[0].x) return points[0].y;
+            if (targetQ >= points[points.length - 1].x) return points[points.length - 1].y;
+
+            for (let i = 0; i < points.length - 1; i++) {
+                const p1 = points[i];
+                const p2 = points[i+1];
+                if (targetQ >= p1.x && targetQ <= p2.x) {
+                    const ratio = (targetQ - p1.x) / (p2.x - p1.x);
+                    return p1.y + ratio * (p2.y - p1.y);
+                }
+            }
+            return 0;
+        }
+
+        function runAnalysis() {
+            const qIn = document.querySelectorAll('.q-val');
+            const pIn = document.querySelectorAll('.p-val');
+            const opQ = parseFloat(document.getElementById('op-q').value);
+            const config = document.getElementById('fan-config').value;
+            const count = parseInt(document.getElementById('fan-count').value) || 1;
+
+            let basePoints = [];
+            qIn.forEach((el, i) => {
+                const q = parseFloat(el.value);
+                const p = parseFloat(pIn[i].value);
+                if (!isNaN(q) && !isNaN(p)) basePoints.push({x: q, y: p});
+            });
+
+            basePoints.sort((a, b) => a.x - b.x);
+            if (basePoints.length < 2) return;
+
+            const compositePoints = getCompositePoints(basePoints, config, count);
+            document.getElementById('config-badge').innerText = `${config.toUpperCase()} (x${count})`;
+
+            const regData = compositePoints.map(p => [p.x, p.y]);
+            const result = regression.polynomial(regData, { order: 2 });
+            const [c, b, a] = result.equation; 
+
+            const opP = getPressureAtFlow(compositePoints, opQ);
+            const k = (opQ > 0) ? (opP / Math.pow(opQ, 2)) : 0;
+
+            updateChart(compositePoints, a, b, c, k, opQ, opP);
+        }
+
+        function updateChart(points, a, b, c, k, opQ, opP) {
+            document.getElementById('fan-eq').innerHTML = `P = (${a.toExponential(2)})Q² + (${b.toFixed(4)})Q + ${c.toFixed(2)}`;
+            document.getElementById('sys-eq').innerHTML = `P = (${k.toExponential(4)})Q²`;
+
+            const sysData = [];
+            const maxQ = Math.max(points[points.length-1].x, opQ) * 1.25;
+            const maxP = Math.max(points[0].y, opP) * 1.1;
+
+            for (let q = 0; q <= maxQ; q += maxQ / 100) {
+                sysData.push({ x: q, y: k * q * q });
+            }
+
+            const ctx = document.getElementById('mainChart').getContext('2d');
+            if (myChart) myChart.destroy();
+
+            const chartTextColor = '#f1f5f9';
+
+            myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label: '複合風扇 P-Q (Composite)',
+                            data: points,
+                            borderColor: '#10b981',
+                            borderWidth: 4,
+                            pointRadius: 6,
+                            pointBackgroundColor: '#10b981',
+                            tension: 0, 
+                            fill: false,
+                            order: 2
+                        },
+                        {
+                            label: '系統阻抗 (System)',
+                            data: sysData,
+                            borderColor: '#3b82f6',
+                            borderWidth: 3,
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            fill: false,
+                            order: 3
+                        },
+                        {
+                            label: '操作點 (OP)',
+                            data: [{ x: opQ, y: opP }],
+                            type: 'scatter',
+                            backgroundColor: '#fbbf24',
+                            borderColor: '#fff',
+                            borderWidth: 2,
+                            pointRadius: 10,
+                            pointHoverRadius: 12,
+                            order: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 400 },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            min: 0,
+                            title: { display: true, text: 'AIRFLOW (Q) [CFM]', color: chartTextColor, font: { family: 'JetBrains Mono', weight: 'bold', size: 12 } },
+                            grid: { color: '#262626' },
+                            ticks: { color: chartTextColor, font: { weight: 'bold' } }
+                        },
+                        y: {
+                            type: 'linear',
+                            min: 0,
+                            suggestedMax: maxP,
+                            title: { display: true, text: 'STATIC PRESSURE (P) [inH₂O]', color: chartTextColor, font: { family: 'JetBrains Mono', weight: 'bold', size: 12 } },
+                            grid: { color: '#262626' },
+                            ticks: { color: chartTextColor, font: { weight: 'bold' } }
+                        }
+                    },
+                    plugins: {
+                        legend: { labels: { color: chartTextColor, font: { family: 'Noto Sans TC', size: 13, weight: 'bold' } } },
+                        tooltip: {
+                            backgroundColor: 'rgba(26, 26, 26, 0.95)',
+                            titleFont: { family: 'JetBrains Mono', size: 14 },
+                            bodyFont: { size: 14 },
+                            borderColor: '#444',
+                            borderWidth: 1,
+                            callbacks: {
+                                label: (ctx) => ` ${ctx.dataset.label}: Q=${ctx.parsed.x.toFixed(1)}, P=${ctx.parsed.y.toFixed(3)}`
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        window.onload = runAnalysis;
+    </script>
+</body>
+</html>
