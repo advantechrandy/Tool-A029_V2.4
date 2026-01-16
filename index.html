@@ -59,6 +59,13 @@
             background: #050505;
         }
 
+        input:disabled {
+            color: #666;
+            background: #1a1a1a;
+            cursor: not-allowed;
+            border-color: #222;
+        }
+
         .btn-action {
             background: var(--accent-color);
             color: #000;
@@ -111,7 +118,7 @@
         }
     </style>
 </head>
-<body oncontextmenu="return false;"> <!-- 透過 HTML 屬性直接阻擋右鍵 -->
+<body oncontextmenu="return false;">
     <div class="max-w-7xl mx-auto">
         <header class="mb-8 flex justify-between items-end border-b border-zinc-700 pb-6">
             <div>
@@ -171,7 +178,7 @@
                         <div class="grid grid-cols-2 gap-4">
                             <div>
                                 <label class="text-[11px] block mb-2 uppercase">配置方式</label>
-                                <select id="fan-config">
+                                <select id="fan-config" onchange="toggleFanCount()">
                                     <option value="single">單顆 (Single)</option>
                                     <option value="series">串聯 (Series)</option>
                                     <option value="parallel">並聯 (Parallel)</option>
@@ -230,10 +237,21 @@
     </div>
 
     <script>
-        // 額外透過 JavaScript 確保阻擋右鍵選單
         document.addEventListener('contextmenu', event => event.preventDefault());
 
         let myChart = null;
+
+        // 新增：處理單顆風扇時數量固定為 1
+        function toggleFanCount() {
+            const config = document.getElementById('fan-config').value;
+            const countInput = document.getElementById('fan-count');
+            if (config === 'single') {
+                countInput.value = 1;
+                countInput.disabled = true;
+            } else {
+                countInput.disabled = false;
+            }
+        }
 
         function addRow() {
             const tbody = document.getElementById('pq-body');
@@ -394,7 +412,10 @@
             });
         }
 
-        window.onload = runAnalysis;
+        window.onload = () => {
+            toggleFanCount(); // 初始化時檢查一次
+            runAnalysis();
+        };
     </script>
 </body>
 </html>
